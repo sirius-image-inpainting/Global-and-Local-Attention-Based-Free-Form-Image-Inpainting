@@ -7,8 +7,13 @@ from PIL import Image
 import numpy as np
 from argparse import ArgumentParser
 
+import torchvision.transforms as transforms
 import pytorch_lightning as pl
 from torch.utils.data import Dataset, DataLoader
+
+from model.mask import brush_stroke_mask
+from utils import get_image_files
+
 
 class DataPlace:
     def __init__(self):
@@ -22,20 +27,30 @@ class PlacesDataset(Dataset, DataPlace):
         if key not in ["train", "val", "test"]:
             raise ValueError(f'key argument must be train, val or test, but {key} provided.')
         if key == "train":
-            formal_name = 'train_256_places365standard'
+            formal_name = 'data_256'
         elif key == "val":
             formal_name = 'val_256'
         else:
             formal_name = 'test_256'
-        self.data_folder = os.path.join(self.data_folder, formal_name)
-        self.names = os.listdir(self.data_folder)
+        data_folder = os.path.join(self.data_folder, formal_name)
+        self.data = get_image_files(data_folder)
+        self.transform = transforms.ToTensor()
+        self.masking = brush_stroke_mask()
 
     def __len__(self) -> int:
-        return len(self.names)
+        return len(self.data)
 
-    def __getitem__(self, idx) -> np.ndarray:
-        current_path = os.path.join(self.data_folder, self.names[idx])
-        return np.asarray(Image.open(current_path))
+    def __getitem__(self, idx) -> (np.ndarray, np.ndarray):
+        ground_truth = Image.open(self.data[idx])
+        ground_truth = self.transform(ground_truth)
+
+        mask = self.masking.generate_mask(256, 256)
+        return {'ground_truth': PlacesDataset.normalize(ground_truth),
+                'mask': np.expand_dims(mask, axis=0)} # TODO mask wrong shape?
+
+    @staticmethod
+    def normalize(X):
+        return 2 * X - 1
 
 
 class PlacesDataModule(pl.LightningDataModule, DataPlace):
@@ -78,6 +93,6 @@ class PlacesDataModule(pl.LightningDataModule, DataPlace):
     def test_dataloader(self):
         return DataLoader(self.test_dataset, batch_size=4, num_workers=4)
 
-    @staticmethod
-    def add_argparse_args(parent_parser: ArgumentParser):
+    #@staticmethod
+    #def add_argparse_args(parent_parser: ArgumentParser):
 
