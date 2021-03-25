@@ -1,10 +1,5 @@
 import numpy as np
-import cv2
-import random
-import scipy.ndimage as ndimage
-import scipy.misc as misc
 import torch
-import torch.nn.functional as F
 import math
 from PIL import Image, ImageDraw
 

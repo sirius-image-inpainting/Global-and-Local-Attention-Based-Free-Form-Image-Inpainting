@@ -1,11 +1,6 @@
 import time
 import gc
 
-from PIL import Image
-import matplotlib.pyplot as plt
-from torchvision.datasets.folder import is_image_file
-
-from DataModule.PlacesDataModule import PlacesDataModule
 from model.network import Generator, Discriminator
 from DataModule.PlacesDataModule import PlacesDataset
 
@@ -14,7 +9,7 @@ import os
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
 from utils import SSIM
@@ -57,6 +52,12 @@ class Network:
             'discriminator_optimizer': self.discriminator_optimizer.state_dict(),
         }, path)
 
+    @staticmethod
+    def from_pretrained(path):
+        checkpoint = torch.load(path)
+        generator = Generator().load_state_dict(checkpoint['generator'])
+        discriminator = Discriminator().load_state_dict(checkpoint['discriminator'])
+        return generator, discriminator
 
     def forward_step(self, batch):
         ground_truth, mask = batch['ground_truth'], batch['mask']
@@ -72,8 +73,8 @@ class Network:
         fake_feature_volumes, real_feature_volumes = self.discriminator(refinement_image_inpainted.detach(),
                                                                         ground_truth)
         discriminator_lorentzian_loss = torch.mean(torch.log(1 + torch.abs(fake_feature_volumes - real_feature_volumes)))
-        discriminator_hinge_loss = (torch.mean(self.relu(1 - (real_feature_volumes - torch.mean(fake_feature_volumes))))
-                                 +  torch.mean(self.relu(1 + (fake_feature_volumes - torch.mean(real_feature_volumes))))) / 2
+        discriminator_hinge_loss = (torch.mean(self.relu(1 - (real_feature_volumes - torch.mean(fake_feature_volumes, dim=0))))
+                                 +  torch.mean(self.relu(1 + (fake_feature_volumes - torch.mean(real_feature_volumes, dim=0))))) / 2
 
         l1_loss = self.l1_loss((1 - mask) * course_image, (1 - mask) * ground_truth) * self.args.coarse_l1_alpha \
                 + self.l1_loss((1 - mask) * refinement_image, (1 - mask) * ground_truth)
@@ -82,8 +83,8 @@ class Network:
 
         fake_feature_volumes, real_feature_volumes = self.discriminator(refinement_image_inpainted, ground_truth)
         generator_lorentzian_loss = torch.mean(torch.log(1 + torch.abs(fake_feature_volumes - real_feature_volumes)))
-        generator_hinge_loss = (torch.mean(self.relu(1 + (real_feature_volumes - torch.mean(fake_feature_volumes)))) +
-                                torch.mean(self.relu(1 - (fake_feature_volumes - torch.mean(real_feature_volumes))))) / 2
+        generator_hinge_loss = (torch.mean(self.relu(1 + (real_feature_volumes - torch.mean(fake_feature_volumes, dim=0)))) +
+                                torch.mean(self.relu(1 - (fake_feature_volumes - torch.mean(real_feature_volumes, dim=0))))) / 2
         loss = self.args.l1_weight * l1_loss + ssim_loss * (1 - self.args.l1_weight)
         return course_image_inpainted, \
                refinement_image_inpainted, \
